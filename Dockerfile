@@ -1,4 +1,4 @@
-FROM python:3.13-slim
+FROM python:3.13-slim AS base
 
 WORKDIR /app
 
@@ -6,9 +6,22 @@ COPY requirements.txt .
 
 RUN pip install --no-cache-dir -r requirements.txt
 
+
+FROM base AS test
+
+COPY app ./app
+COPY tests ./tests
+COPY pytest.ini .
+
+CMD ["python", "-m", "pytest", "-v"]
+
+
+FROM base AS runtime
+
 COPY app ./app
 
-RUN useradd --create-home appuser
+RUN useradd --create-home --shell /usr/sbin/nologin appuser \
+    && chown -R appuser:appuser /app
 
 USER appuser
 

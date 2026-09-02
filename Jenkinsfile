@@ -53,6 +53,7 @@ pipeline {
                 sh '''
                     docker build \
                       --target runtime \
+                      --build-arg APP_VERSION=$IMAGE_TAG \
                       -t $IMAGE_REPO:$IMAGE_TAG \
                       .
                 '''
@@ -80,6 +81,51 @@ pipeline {
                           "$IMAGE_REPO:$IMAGE_TAG"
 
                         docker logout ghcr.io
+                    '''
+                }
+            }
+        }
+
+        stage('Update GitOps Repository') {
+            steps {
+                withCredentials([
+                    gitUsernamePassword(
+                        credentialsId: 'github-gitops-token',
+                        gitToolName: 'Default'
+                    )
+                ]) {
+                    sh '''
+                        set -eu
+
+                        GITOPS_DIR="$(mktemp -d)"
+                        trap 'rm -rf "$GITOPS_DIR"' EXIT
+
+                        git clone \
+                          --branch main \
+                          --single-branch \
+                          https://github.com/seokkt/ec2-gitops-platform.git \
+                          "$GITOPS_DIR"
+
+                        KUSTOMIZATION="$GITOPS_DIR/kubernetes/apps/demo-api/kustomization.yaml"
+
+                        sed -i -E \
+                          "s|^([[:space:]]*newTag:)[[:space:]]*.*$|\\1 $IMAGE_TAG|" \
+                          "$KUSTOMIZATION"
+
+                        test "$(grep -Ec "^[[:space:]]*newTag:[[:space:]]*$IMAGE_TAG$" "$KUSTOMIZATION")" -eq 1
+
+                        git -C "$GITOPS_DIR" config user.name "Jenkins"
+                        git -C "$GITOPS_DIR" config user.email "jenkins@localhost"
+                        git -C "$GITOPS_DIR" add \
+                          kubernetes/apps/demo-api/kustomization.yaml
+
+                        if git -C "$GITOPS_DIR" diff --cached --quiet; then
+                          echo "GitOps repository already references $IMAGE_TAG"
+                        else
+                          git -C "$GITOPS_DIR" commit \
+                            -m "ci: deploy demo-api $IMAGE_TAG"
+                          git -C "$GITOPS_DIR" push origin HEAD:main
+                        fi
                     '''
                 }
             }

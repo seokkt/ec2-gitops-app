@@ -18,6 +18,9 @@ CMD ["python", "-m", "pytest", "-v"]
 
 FROM base AS runtime
 
+ARG APP_VERSION=unknown
+ENV APP_VERSION=${APP_VERSION}
+
 COPY app ./app
 
 RUN useradd --create-home --shell /usr/sbin/nologin appuser \
